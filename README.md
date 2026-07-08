@@ -13,20 +13,43 @@ simplest option since it's just cron + secrets, no server to maintain.
 
 ## Setup steps
 
-1. **Add the two files to a GitHub repo** (a small dedicated repo is fine,
+### A note on Shopify auth (important - this changed Jan 1, 2026)
+
+Shopify retired static `shpat_` tokens for apps created in the Dev
+Dashboard (like your `dnp-sync` app). There's no token to copy and paste
+anymore - instead the app has a **Client ID** and **Client Secret**, and
+the script itself exchanges those for a short-lived (24-hour) token every
+time it runs. This is already built into `sync.mjs` - you just need to
+supply the Client ID/Secret as secrets, not a token.
+
+### Steps
+
+1. **Finish setting up `dnp-sync` in the Dev Dashboard:**
+   - Open the app → **Configuration** (or Versions) → set the Admin API
+     scopes to: `read_products`, `write_products`, `read_inventory`,
+     `write_inventory` -> save, which creates a new version
+   - Click **Install app** on the Overview page (your screenshot showed
+     "Installs: 0" - this step hasn't happened yet) -> install it on
+     **My Store 3**
+   - Go to **Settings** -> copy the **Client ID** and **Client secret**
+
+   Important: this only works if `dnp-sync` and "My Store 3" are in the
+   **same Shopify organization** in the Dev Dashboard. If you get a
+   `shop_not_permitted` error later, that's almost always why - check
+   under **Dev stores** in the Dev Dashboard sidebar that "My Store 3"
+   is actually listed there.
+
+2. **Add the two files to a GitHub repo** (a small dedicated repo is fine,
    doesn't need to be your storefront repo):
    - `daily-sync/sync.mjs`
    - `.github/workflows/daily-sync.yml` (rename the provided
      `.github-workflows-daily-sync.yml` to this path)
 
-2. **Create a Shopify Admin API token** with these scopes:
-   `read_products`, `write_products`, `read_inventory`, `write_inventory`
-   (Settings → Apps and sales channels → Develop apps → Create an app →
-   Configure Admin API scopes → Install app → reveal token)
-
 3. **Add repo secrets** (Settings → Secrets and variables → Actions):
-   - `SHOPIFY_STORE_DOMAIN` → e.g. `pe107x-br.myshopify.com`
-   - `SHOPIFY_ADMIN_API_TOKEN` → the token from step 2
+   - `SHOPIFY_SHOP` -> just the subdomain, e.g. `pe107x-br` (not the full
+     `.myshopify.com` address)
+   - `SHOPIFY_CLIENT_ID` -> from step 1
+   - `SHOPIFY_CLIENT_SECRET` -> from step 1
 
 4. **Test it manually first**: Actions tab → Daily DVP → Shopify Sync →
    Run workflow. Check the logs before trusting the schedule.

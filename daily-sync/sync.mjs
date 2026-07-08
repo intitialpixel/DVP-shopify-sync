@@ -19,10 +19,17 @@
  *          DVP doesn't expose exact counts), and the variant's Price
  *
  * Requires environment variables:
- *   SHOPIFY_STORE_DOMAIN      e.g. pe107x-br.myshopify.com
- *   SHOPIFY_ADMIN_API_TOKEN   Admin API access token with:
- *                             read_products, write_products,
- *                             read_inventory, write_inventory
+ *   SHOPIFY_SHOP              store subdomain only, e.g. "pe107x-br"
+ *                             (NOT the full pe107x-br.myshopify.com)
+ *   SHOPIFY_CLIENT_ID         from your Dev Dashboard app's Settings tab
+ *   SHOPIFY_CLIENT_SECRET     from your Dev Dashboard app's Settings tab
+ *
+ * As of Jan 1 2026, Shopify retired static shpat_ tokens for apps created in
+ * the Dev Dashboard. Instead of a token you copy once, the app has a Client
+ * ID + Client Secret, and the script exchanges those for a short-lived
+ * (24-hour) access token every time it runs, via the client_credentials
+ * grant. This only works if the app and the store are in the same Shopify
+ * organization - see the README if you hit a `shop_not_permitted` error.
  *
  * Rate limiting: this script fetches DVP product pages one at a time with a
  * delay (DVP_FETCH_DELAY_MS) between each request. Do not remove this delay -
@@ -30,25 +37,57 @@
  * not to run as fast as possible.
  */
 
-const SHOPIFY_DOMAIN = process.env.SHOPIFY_STORE_DOMAIN;
-const SHOPIFY_TOKEN = process.env.SHOPIFY_ADMIN_API_TOKEN;
+const SHOP = process.env.SHOPIFY_SHOP;
+const CLIENT_ID = process.env.SHOPIFY_CLIENT_ID;
+const CLIENT_SECRET = process.env.SHOPIFY_CLIENT_SECRET;
 const API_VERSION = "2025-01";
 const DVP_FETCH_DELAY_MS = 2500; // politeness delay between supplier page fetches
 const IN_STOCK_NOMINAL_QTY = 999; // dropship proxy quantity - DVP doesn't expose exact counts
 
-if (!SHOPIFY_DOMAIN || !SHOPIFY_TOKEN) {
-  console.error("Missing SHOPIFY_STORE_DOMAIN or SHOPIFY_ADMIN_API_TOKEN env vars.");
+if (!SHOP || !CLIENT_ID || !CLIENT_SECRET) {
+  console.error("Missing SHOPIFY_SHOP, SHOPIFY_CLIENT_ID, or SHOPIFY_CLIENT_SECRET env vars.");
   process.exit(1);
 }
 
-const GRAPHQL_URL = `https://${SHOPIFY_DOMAIN}/admin/api/${API_VERSION}/graphql.json`;
+const GRAPHQL_URL = `https://${SHOP}.myshopify.com/admin/api/${API_VERSION}/graphql.json`;
+
+let cachedToken = null;
+let tokenExpiresAt = 0;
+
+/** Exchange Client ID + Client Secret for a short-lived access token (cached, auto-refreshed). */
+async function getAccessToken() {
+  if (cachedToken && Date.now() < tokenExpiresAt - 60_000) return cachedToken;
+
+  const res = await fetch(`https://${SHOP}.myshopify.com/admin/oauth/access_token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "client_credentials",
+      client_id: CLIENT_ID,
+      client_secret: CLIENT_SECRET,
+    }),
+  });
+
+  if (!res.ok) {
+    throw new Error(
+      `Token request failed: ${res.status}. If this says shop_not_permitted, the app ` +
+        `and store aren't in the same Shopify org - see README.`
+    );
+  }
+
+  const { access_token, expires_in } = await res.json();
+  cachedToken = access_token;
+  tokenExpiresAt = Date.now() + expires_in * 1000;
+  return cachedToken;
+}
 
 async function shopifyGraphQL(query, variables = {}) {
+  const token = await getAccessToken();
   const res = await fetch(GRAPHQL_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "X-Shopify-Access-Token": SHOPIFY_TOKEN,
+      "X-Shopify-Access-Token": token,
     },
     body: JSON.stringify({ query, variables }),
   });
