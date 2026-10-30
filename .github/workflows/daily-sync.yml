@@ -1,12 +1,11 @@
 name: Daily DVP -> Shopify Sync
 
 on:
-  schedule:
-    # Runs at 05:00 UTC every day - adjust to whenever suits (avoid DVP's
-    # likely peak traffic hours as a courtesy, and avoid your own peak
-    # storefront traffic hours since prices/stock will be changing).
-    - cron: "0 5 * * *"
-  workflow_dispatch: {} # lets you also trigger it manually from the Actions tab
+  # Daily schedule disabled: this script prices from cost and does not match the
+  # supplier pricing rules now held in Shopify. Re-enable only after reworking it.
+  # schedule:
+  #   - cron: "0 5 * * *"
+  workflow_dispatch: {} # manual trigger from the Actions tab only
 
 jobs:
   sync:
